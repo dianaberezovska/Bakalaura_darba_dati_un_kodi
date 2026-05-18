@@ -1,0 +1,599 @@
+---
+title: "Orthoptera_stridulation_pictures_090526"
+author: "Diana Berezovska"
+date: "2026-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Izslēdzu kļūdu ar mazu plot logu
+options(repr.plot.width = 12, repr.plot.height = 7)
+```
+
+# Rīku ielāde
+
+```{r}
+# Instalēju rīkus, kas ļauj lejupielādēt pakotnes no GitHub
+install.packages("remotes")
+install.packages("tuneR")
+install.packages("seewave")
+install.packages("av")
+
+# Instalēju pašu Rthoptera
+options(download.file.method = "wininet")
+remotes::install_github("naturewaves/Rthoptera")
+
+```
+
+# Direktorija un pakotnes
+
+```{r}
+# Darba direktorija
+setwd("C:/Users/Diana/OneDrive/Dators/###/Dokumenti/Studijas/BIO BAKALAURS/Bakalaura darbs/Sienazu stridulacijas audio")
+```
+
+```{r}
+library(tuneR)
+library(seewave)
+```
+
+# C. dors. spektogrammas
+
+## Mēģ. Nr. 1
+
+Audio fails no xeno-canto "XC924985 - Eurasian meadow katydid - Conocephalus dorsalis.wav" autors: Rūta Starka
+
+ŠĪ IR TIKAI **ČETRZILBJU** STRIDULĀCIJA, KO **IESĀK** **STRIDULĒT**
+
+```{r}
+# WAV faila ielāde
+
+fails1 <- "XC924985 - Eurasian meadow katydid - Conocephalus dorsalis.wav"
+
+dziesma1 <- readWave(fails1)
+
+# Mono signāls
+
+x <- dziesma1@left
+fs <- dziesma1@samp.rate
+
+# Audio ilgums
+
+ilgums <- length(x) / fs
+
+# Maksimālais analizējamais laiks
+t_max <- min(3, ilgums)
+
+# IZVEIDOJU PNG FAILU TIEŠI
+
+png(
+  filename = "Conocephalus_dorsalis_spectrogramma1.png",
+  width = 2400,
+  height = 1400,
+  res = 300)
+
+# MALAS
+
+par(mar = c(5, 5, 3, 2))
+
+# SPEKTROGRAMMA
+
+spectro(
+  x,
+  f = fs,
+  wl = 1024,
+  ovlp = 90,
+  flim = c(7, 47.9), # jo neļauj ņemt maksimāli pieejamo 48
+  tlim = c(0, t_max),
+  scale = TRUE,
+  collevels = seq(-90, 0, 2),
+
+# X ass nosaukums
+  xlabel = "Laiks (s) / Time (s)",
+
+# Y ass nosaukums
+  ylabel = "Frekvence (kHz) / Frequency (kHz)")
+
+# SAGLABĀT ATTĒLU
+
+dev.off()
+
+# PAZIŅOJUMS
+
+print("Spektrogramma veiksmīgi saglabāta mapē.")
+```
+
+Tam pašam failam cita veida spektogramma bez aizmugurējā fona
+
+```{r}
+
+# Definējam laiku spektrogrammai
+t_spec_max <- min(3, length(x) / fs)
+
+png(filename = "Conocephalus_dorsalis_spectrogramma_final.png",
+    width = 2400, height = 1400, res = 300)
+
+# Iestatām malas (5. rinda apakšā un 6. rinda kreisajā pusē dod vietu nosaukumiem)
+par(mar = c(6, 7, 4, 4))
+
+# Zīmējam spektrogrammu
+spectro(x, f = fs, 
+        wl = 1024, 
+        ovlp = 90, 
+        flim = c(10, 47.9), 
+        tlim = c(0, t_spec_max), 
+        scale = FALSE, 
+        grid = FALSE,
+        axisX = TRUE,  
+        axisY = TRUE,
+        xlab = "",     # BŪTISKI: Pasaka funkcijai NErakstīt X nosaukumu
+        ylab = "",     # BŪTISKI: Pasaka funkcijai NErakstīt Y nosaukumu
+        main = NULL)   
+
+# Pievienojam asis
+# line = 3 vai 4 nobīda tekstu tālāk no asu cipariem, lai tie nepārklājas
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+print("Spectogramma ar asu nosaukumiem divās valodās!")
+```
+
+### Oscilogramma
+
+```{r}
+# Sagatavojam datus (5 sekundes)
+t_osc_max <- min(5, length(x) / fs)
+parauga_beigas <- t_osc_max * fs
+x_nogrieziens <- x[1:parauga_beigas]
+laika_ass <- seq(0, t_osc_max, length.out = length(x_nogrieziens))
+
+# Veidojam PNG
+png(filename = "Conocephalus_dorsalis_oscilogramma_final.png",
+    width = 2400, height = 1200, res = 300)
+
+# Iestatām malas (apakša, kreisā puse, augša, labā puse)
+par(mar = c(5, 6, 4, 2))
+
+# Zīmējam pašu vilni ar pamata plot funkciju (tā nekad nepieviļ)
+plot(laika_ass, x_nogrieziens, type = "l", 
+     col = "black", 
+     xlab = "Laiks (s) / Time (s)", 
+     ylab = "Amplitūda / Amplitude",
+     xaxs = "i",  # Noņem tukšumus pie asīm
+     yaxt = "n")  # Noņemam Y ass skaitļus, jo tie parasti ir relatīvi
+
+# Pievienojam Y asij nosaukumu "Amplitūda" (bez cipariem, jo tie ir relatīvi)
+axis(2, at = 0, labels = "0")
+
+dev.off()
+
+print("Oscilogarmma gatava.")
+```
+
+## Mēģ. Nr. 2
+
+Diānas audio fails "20250909_170000_2_DA_CONO_DORS_mija.wav"
+
+ŠĪ IR GAN **ČETRZILBJU**, GAN **VIENZILBJU** STRIDULĀCIJA
+
+```{r}
+# WAV faila ielāde
+
+fails2 <- "20250909_170000_2_DA_CONO_DORS_mija.wav"
+
+dziesma2 <- readWave(fails2)
+
+# Mono signāls
+
+x <- dziesma2@left
+fs <- dziesma2@samp.rate
+
+# Audio ilgums
+
+ilgums <- length(x) / fs
+
+# Maksimālais analizējamais laiks
+t_max <- min(3, ilgums)
+
+# IZVEIDOJU PNG FAILU TIEŠI
+
+png(
+  filename = "Conocephalus_dorsalis_spectrogramma2.png",
+  width = 2400,
+  height = 1400,
+  res = 300)
+
+# MALAS
+
+par(mar = c(5, 5, 3, 2))
+
+# SPEKTROGRAMMA
+
+spectro(
+  x,
+  f = fs,
+  wl = 1024,
+  ovlp = 90,
+  flim = c(11, 47.9),
+  tlim = c(0, t_max),
+  scale = TRUE,
+  collevels = seq(-90, 0, 2))
+  
+# SAGLABĀT ATTĒLU
+
+dev.off()
+
+# PAZIŅOJUMS
+
+print("Spektrogramma veiksmīgi saglabāta.)
+```
+
+Šim attēlam ir divu veidu stridulācija, bet slikta izškirtspēja, indivīdas ir pārāk tālu.
+
+Pamēģināšu ar citu audio failu.
+
+## Mēģ. Nr. 3
+
+Diānas audio fails "20250909_100000_2_DA_CONO_DORS_mija.WAV"
+
+ŠĪ IR GAN **ČETRZILBJU**, GAN **VIENZILBJU** STRIDULĀCIJA
+
+```{r}
+fails3 <- "20250909_100000_2_DA_CONO_DORS_mija.wav"
+dziesma3 <- readWave(fails3)
+
+# Parametri
+x <- dziesma3@left
+fs <- dziesma3@samp.rate
+
+# IZVĒLĒTAIS POSMS: 21 līdz 25 sekunde (kopā 4 sekundes)
+sakums <- 21
+beigas <- 25
+
+# Sekundes pārvēršam paraugos
+start_sample <- sakums * fs
+end_sample <- beigas * fs
+
+# Izgriežam audio posmu
+x_cut <- x[start_sample:end_sample]
+
+# PNG faila izveide
+png(filename = "Conocephalus_dorsalis_spectrogramma3.png",
+    width = 2400, height = 1400, res = 300)
+
+# Malas (vairāk vietas kreisajā pusē un apakšā nosaukumiem)
+par(mar = c(6, 7, 4, 4))
+
+# SPEKTROGRAMMA
+# Izmantojam x_cut, lai analizētu tikai izvēlēto posmu
+spectro(x_cut, 
+        f = fs, 
+        wl = 1024, 
+        ovlp = 90, 
+        flim = c(11, 47.9),
+        scale = FALSE,     # Scale=FALSE bieži palīdz labāk redzēt fonu/kontrastu
+        grid = FALSE,
+        palette = reverse.terrain.colors, # Krāsains fons labākai redzamībai
+        axisX = FALSE,    # Noņemam automāto asi, lai uzliktu savu 1-4
+        xlab = "",        # Noņemam standarta nosaukumus
+        ylab = "",
+        main = NULL)
+
+# MANUĀLĀS ASIS UN NOSAUKUMI
+# Uzliekam X asi no 1 līdz 4
+axis(1, at = seq(0, 4, by = 1), labels = c("1", "2", "3", "4", "5"))
+
+# Pievienojam nosaukumus ar title(), lai izvairītos no "unused argument" kļūdām
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+print("Spektrogramma (4s fragments) veiksmīgi saglabāta.")
+```
+
+Okay. Mēģinu citu spektogrammas variantu izmantojot šo pašu audio, bet lai spektogramma ir bez fona
+
+## Mēģ. Nr. 3 bez fona + oscilogramma
+
+```{r}
+# Fragmenta sagatavošana (paliek tāda pati)
+fs <- dziesma3@samp.rate
+starts <- 31 * fs
+beigas <- 36 * fs
+x_fragments <- dziesma3@left[starts:beigas]
+
+# JAUNĀ laika ass (no 1 līdz 5 sekundēm)
+laika_ass_jauna <- seq(1, 5, length.out = length(x_fragments))
+
+# SPEKTROGRAMMAS IZVEIDE
+
+png(filename = "C_dorsalis_mija_spectrogramma_1-5s.png",
+    width = 2400, height = 1400, res = 300)
+
+par(mar = c(6, 7, 4, 4))
+
+# Zīmējam spektrogrammu
+# Tā kā mēs dodam tikai 5s garu fragmentu, spectro pati sāks no 0. 
+# Lai dabūtu 1-5, mēs izmantosim viltību ar asīm.
+spectro(x_fragments, f = fs, 
+        wl = 1024, ovlp = 90, 
+        flim = c(11, 47.9), 
+        scale = FALSE, grid = FALSE,
+        axisX = FALSE, # Izslēdzam automātisko asi (0-5)
+        xlab = "", ylab = "", main = NULL)
+
+# Uzzīmējam asis ar nobīdi (lai sākas no 1)
+axis(1, at = seq(0, 5, by = 1), labels = c("1", "2", "3", "4", "5", "6"))
+
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+# OSCILOGRAMMAS IZVEIDE
+
+png(filename = "C_dorsalis_mija_oscilogramma_1-5s.png",
+    width = 2400, height = 1200, res = 300)
+
+par(mar = c(6, 7, 4, 2))
+
+# Izmantojam jauno laika asi (1 līdz 5)
+plot(laika_ass_jauna, x_fragments, type = "l", 
+     col = "black", 
+     xlab = "Laiks (s) / Time (s)", 
+     ylab = "Amplitūda / Amplitude", 
+     main = "Conocephalus dorsalis oscilogramma (1-5 s)",
+     xaxs = "i")
+
+dev.off()
+
+print("Tagad abiem attēliem X ass ir mērogota no 1 līdz 5 sekundēm.")
+```
+
+Sanāca laba oscilogramma (lieku savā darbā!), bet diezgan blāvs attēls ir spektogrammai
+
+## Mēģ. Nr. 4
+
+Diānas audio fails "20250909_080000_2_DA_CONO_DORS_mija.WAV"
+
+ŠĪ IR GAN **ČETRZILBJU**, GAN **VIENZILBJU** STRIDULĀCIJA
+
+```{r}
+fails3 <- "20250909_100000_2_DA_CONO_DORS_mija.wav"
+dziesma3 <- readWave(fails3)
+
+x <- dziesma3@left
+fs <- dziesma3@samp.rate
+
+# IZVĒLĒTAIS POSMS: 22 līdz 26 sekunde
+sakums <- 22
+beigas <- 26
+start_sample <- sakums * fs
+end_sample <- beigas * fs
+x_cut <- x[start_sample:end_sample]
+
+# PNG faila izveide
+png(filename = "Conocephalus_dorsalis_spectrogramma3.png",
+    width = 2400, height = 1400, res = 300)
+
+# Malas
+par(mar = c(6, 7, 4, 5)) # Palielinām labo malu, lai ietilpst scale josla
+
+# SPEKTROGRAMMA AR FONU
+spectro(x_cut, 
+        f = fs, 
+        wl = 1024, 
+        ovlp = 90, 
+        flim = c(11, 47.9), 
+        scale = TRUE,              # ATLIEKAM ATPAKAĻ FONU
+        collevels = seq(-90, 0, 2), # DEFINĒJAM KRĀSU DZIĻUMU
+        grid = FALSE,
+        palette = spectro.colors,  # Klasiskā spektrogrammas krāsu palete
+        axisX = FALSE,             # Manuālai asij
+        xlab = "", 
+        ylab = "",
+        main = NULL)
+
+# MANUĀLĀS ASIS UN NOSAUKUMI
+# Atzīmes 0,1,2,3,4 atbilst sekundēm 1,2,3,4,5
+axis(1, at = seq(0, 4, by = 1), labels = c("1", "2", "3", "4", "5"))
+
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+print("Spektrogramma ar fonu un pareizu mērogu saglabāta!")
+```
+
+Šis man patīk vislabāk no visām spektogrammām (lieku savā darbā!), jo ir fons. Bez fona spektogrammās daži frekveņču slāņi paliek caurspīdīgi un blāvi.
+
+# C. fuscus spektogrammas
+
+Audio fails no xeno-canto "XC924989 - Conocephalus fuscus.wav"
+
+```{r}
+# Ielādējam failu
+fails_cf <- "XC924989 - Conocephalus fuscus.wav"
+dziesma_cf <- readWave(fails_cf)
+
+# Parametri un fragmenta izgriešana (pirmās 3 sekundes)
+fs <- dziesma_cf@samp.rate
+x_fragments <- dziesma_cf@left[0:(3 * fs)]
+
+# PNG faila izveide
+png(filename = "C_fuscus_spectrogramma_6s.png",
+    width = 2400, height = 1400, res = 300)
+
+# Malas
+par(mar = c(6, 7, 4, 5))
+
+# SPEKTROGRAMMA
+spectro(x_fragments, 
+        f = fs, 
+        wl = 1024, 
+        ovlp = 90, 
+        flim = c(5, 47.9),        
+        scale = TRUE,              # Ieslēdzam fonu
+        collevels = seq(-90, 0, 2), # Krāsu dziļums
+        palette = spectro.colors,  # Klasiskā krāsu palete
+        grid = FALSE,
+        axisX = FALSE,             # Manuālā ass
+        xlab = "", 
+        ylab = "",
+        main = NULL)
+
+# MANUĀLĀ X ASS (0-3 sekundes)
+axis(1, at = seq(0, 3, by = 1), labels = c("0", "1", "2", "3"))
+
+# Nosaukumi
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+print("C. fuscus spektrogramma saglabāta.")
+```
+
+## C. fuscus oscilogramma
+
+```{r}
+# Izgriežam fragmentu no 3. līdz 6. sekundei
+fs <- dziesma_cf@samp.rate
+starts <- 3 * fs
+beigas <- 6 * fs
+x_fragments <- dziesma_cf@left[starts:beigas]
+
+# Sagatavojam laika asi, kas sākas no 0 un iet līdz 3 sekundēm
+laika_ass_3s <- seq(0, 3, length.out = length(x_fragments))
+
+# PNG faila izveide
+png(filename = "C_fuscus_oscilogramma_3s.png",
+    width = 2400, height = 1000, res = 300)
+
+# Palielinām apakšējo malu (pirmais skaitlis), lai cipari nepārklājas ar nosaukumu
+par(mar = c(6, 7, 3, 2))
+
+# Zīmējam oscilogrammu
+# plot parametri:
+# cex.axis samazina ciparu izmēru uz asīm, lai tie nepārklājas
+plot(laika_ass_3s, x_fragments, 
+     type = "l", 
+     lwd = 0.5,             # Padara līniju tievāku un smalkāku
+     col = "black", 
+     xlab = "", ylab = "",
+     xaxt = "n",            # Noņemam automātisko X asi
+     yaxt = "n",            # Noņemam Y asi
+     xaxs = "i")            # Noņem tukšumus grafika sānos
+
+# MANUĀLĀS ASIS
+# seq(0, 3, by = 0.5) uzliks atzīmes ik pēc pussekundes, lai nav par biežu
+axis(1, at = seq(0, 3, by = 0.5), labels = seq(0, 3, by = 0.5), cex.axis = 0.8)
+
+# Y ass - tikai nulles līnija skaidrībai
+axis(2, at = 0, labels = "0", las = 1)
+
+# Nosaukumi
+title(xlab = "Laiks (s) / Time (s)", line = 3.5)
+title(ylab = "Amplitūda / Amplitude", line = 2.5)
+
+dev.off()
+
+print("Oscilogramma (3-6s fragments, uz ass 0-3s) ir saglabāta!")
+```
+
+# Metrioptera brachyptera spektogrammas
+
+Audio fails no xeno-canto "XC867447 - Bog Bush-cricket - Metrioptera brachyptera.wav"
+
+```{r}
+# Ielādējam failu
+fails11 <- "XC867447 - Bog Bush-cricket - Metrioptera brachyptera.wav"
+dziesma11 <- readWave(fails11)
+
+# Parametri un fragmenta izgriešana (0-6 sekundes)
+fs <- dziesma11@samp.rate
+# Izgriežam tieši 6 sekundes no sākuma
+x_fragments <- dziesma11@left[1:(6 * fs)]
+
+# PNG faila izveide
+png(filename = "M_brachyptera_spectrogramma_6s.png",
+    width = 2400, height = 1400, res = 300)
+
+# Malas - atstājam vietu skolai labajā pusē (mar[4] = 5)
+par(mar = c(6, 7, 4, 5))
+
+# SPEKTROGRAMMA ar fonu un krāsām
+spectro(x_fragments, 
+        f = fs, 
+        wl = 1024, 
+        ovlp = 90, 
+        flim = c(11, 47.9),        
+        scale = TRUE,              # Ieslēdzam fonu
+        collevels = seq(-90, 0, 2), # Krāsu dziļums fonam
+        palette = spectro.colors,  # Klasiskā krāsu palete
+        grid = FALSE,
+        axisX = FALSE,             # Paši zīmēsim X asi
+        xlab = "", 
+        ylab = "",
+        main = NULL)
+
+# MANUĀLĀ X ASS (no 1 līdz 6 sekundēm)
+# at = pozīcijas (0 līdz 5 sekundēm), labels = ko rakstām (1 līdz 6)
+axis(1, at = seq(0, 5, by = 1), labels = c("1", "2", "3", "4", "5", "6"))
+
+# Pievienojam nosaukumus
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Frekvence (kHz) / Frequency (kHz)", line = 4)
+
+dev.off()
+
+print("Spektrogramma (6s fragments) ar visām vērtībām saglabāta.")
+```
+
+Labs attēls (lietošu savā darbā!)
+
+## M. brachyptera oscilogramma
+
+```{r}
+# Parametri un fragmenta izgriešana (0-6 sekundes)
+fs <- dziesma11@samp.rate
+x_fragments <- dziesma11@left[1:(6 * fs)]
+
+# Izveidojam laika asi no 1 līdz 6 sekundēm
+# length.out nodrošina, ka laika punktu skaits sakrīt ar audio datu punktu skaitu
+laika_ass_6s <- seq(1, 6, length.out = length(x_fragments))
+
+# PNG faila izveide oscilogrammai
+png(filename = "M_brachyptera_oscilogramma_6s.png",
+    width = 2400, height = 1200, res = 300)
+
+# Noregulējam malas (apakša, kreisā puse, augša, labā puse)
+par(mar = c(6, 7, 4, 2))
+
+# Zīmējam oscilogrammu
+plot(laika_ass_6s, x_fragments, 
+     type = "l",           # "l" nozīmē līniju (line)
+     col = "black",        # Vilnis melnā krāsā
+     xlab = "",            # Noņemam standarta nosaukumus, lai pieliktu ar title()
+     ylab = "", 
+     xaxs = "i",           # Grafiks sākas tieši pie ass
+     yaxt = "n")           # Noņemam Y ass ciparus, jo tie ir relatīvi
+
+# Pievienojam asu nosaukumus divās valodās
+title(xlab = "Laiks (s) / Time (s)", line = 4)
+title(ylab = "Amplitūda / Amplitude", line = 3)
+
+# Pievienojam Y ass viduspunktu 0
+axis(2, at = 0, labels = "0")
+
+dev.off()
+
+print("Oscilogramma (6s fragments) veiksmīgi saglabāta.")
+```
+
+Ir laba oscilogramma! Šo arī lieku darbā!
