@@ -1,0 +1,536 @@
+---
+title: "datu sakārtošana"
+author: "Rūta Starka / Diāna"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Darbam nepieciešamās pakotnes
+
+Ielasu. Dplyr ir forša paka, kas ļauj ērti darboties ar datu kārtošanu
+(izmanto %\>%, kas saucās pipe operator).
+
+```{r}
+library(readxl) # atsevišķi Excel lasīšanai
+library(writexl) # atsevišķi Excel rakstīšanai
+library(hms) # atsevišķi laika formātiem
+library(tidyverse) # tā automātiski ielādē tādas pakotnes kā - dplyr, readr, purrr, stringr u.c. 
+```
+
+## Premise
+
+Kas mums ir:
+
+- **10 teritorijas**, katrā 1 iekārta, stāvējusi 20 dienas bez
+  pārtraukuma, ierakstot 1 minūti ik 30 minūtēs.
+
+- Kopā **no vienas iekārtas** tie ir 20 x 24 x 2 = **960 ieraksti**.
+
+  - Dēļ PM funkcionalitātes ierobežojumiem (500 ierakstu limits), no
+    katras iekārtas ir ieraksti sadalīti **divos atskaņošanas
+    sarakstos** (playlists), kur secīgi ir pirmie 480 ieraksti (no
+    23.08.25. - 01.09.25.) un pēdējie 480 ieraksti
+    (02.09.25.-11.09.25.);
+
+  - Tādējādi katrs viens ieraksts ir tikai vienā atskaņošanas sarakstā.
+
+- Kopā pa 10 teritorijām - 9600 ieraksti, kas sadalīti **20 atskaņošanas
+  sarakstos**.
+
+- Katrs atskaņošanas saraksts ir izmantots **9 reizes**:
+
+  - ar 3 dažādiem paraugfragmentiem (template), kas izvēlēti pēc
+    kritērijiem
+
+    - fragmentā dzirdama tikai viena suga (C. dorsalis);
+
+    - fragmentā stridulē tikai viens sugas indivīds;
+
+    - indivīds ir bijis pietiekami tuvu mikrofonam (spriežot pēc
+      stridulācijas skaļuma dB);
+
+    - visi trīs fragmenti atlasīti no 30-45 kHz fekvenču amplitūdā, kas
+      atbilst sugas dominējošajām stridulācijas frekvencēm
+
+    - nav izteiktu fona trokšņu interesējošajā frekvenču diapazonā
+      (lietus, sikspārņi);
+
+  - ar 3 dažādiem atpazīšanas jutības (?) (treshold) iestatījumiem:
+
+    - 0,1 (vispārīgākais)
+
+    - 0,2
+
+    - 0,3 (jutīgākais/ specifiskākais)
+
+- Kopā katrs ieraksts tādējādi ir pakļauts 9 (3 treshold x 3 template)
+  pattern matching sesijām.
+
+  - tātad kopējam rindu skaitam gala failā ir jābūt 9600 x 9 =
+    **86'400**
+
+- Katrs ieraksts ir manuāli (audiāli) pārbaudīts, lai noteiktu sugas
+  klātbūtni vai iztrūkumu ierakstā.
+
+## Masveida ielasīšana
+
+Mums ir darba direktorijā mape "`pattern_matching_results`", kas satur
+180 csv failus (es izņēmu ārā to dīvaino 181. failu, jo tas uzreiz
+radītu virkni problēmu). Tie visi ir vienādi noformēti, kā tie
+automātiski nāk no Arbimon eksporta, tātad - strukturēti tā, ka var
+līmēt kopā. Tomēr, lai nodrošinātu, ka tā tiešām ir ielasīšu vienu failu
+un "nošpikošu" kāda ir tā struktūra, lai varētu "explicitly" to norādīt
+pie masveida ielasīšanas.
+
+```{r}
+piemers = read_csv("./pattern_matching_results_new2/pm-0-5s-1-aiau03-p1-hf-th-0-1_116062.csv")
+spec(piemers)
+rm(piemers)
+```
+
+Izveidoju sarakstu ar to, kā gribu lai katru kolonnu ielasa (jo bija
+problēma ar validated lauku, kas reizēm ielasījās kā skaitlis, reizēm kā
+teksts, neļaujot automātiski failus salīmēt pēc ielasīšanas (t.i.
+nākamais solis))
+
+```{r}
+kolonnas = cols(
+  x1 = col_double(),
+  y1 = col_double(),
+  x2 = col_double(),
+  y2 = col_double(),
+  score = col_double(),
+  validated = col_double(),
+  site_id = col_double(),
+  recording_id = col_double(),
+  recording_local_time = col_datetime(format = ""),
+  site_name = col_character(),
+  audio_url = col_character()
+)
+```
+
+ielasu un uzreiz savienoju, izveidojot kolonnu "file", kas satur faila
+nosaukumu
+
+```{r warning=FALSE}
+# izveidoju failu sarakstu apakšdirektorijā
+files = list.files("./pattern_matching_results_new2", pattern = "\\.csv$", full.names = TRUE)
+
+# ielasu un uzreiz apvienoju
+visiPMjobs = map_df(files, ~ read_csv(.x, col_types = kolonnas) %>% 
+                   mutate(file = basename(.x)))
+rm(kolonnas)
+summary(visiPMjobs) #apskati uzmanīgi, ir vairākas problēmas
+
+prob1 = visiPMjobs %>% filter(is.na(validated))
+#1. ir 46 ieraksti, kuriem pie validated ir NA. Kāpēc diez tā? Ko ar tiem darīt? Četri no tiem ir tie paši, kas aprakstīti zemāk prob2 un prob3
+
+
+prob2 = visiPMjobs %>% filter(!is.na(id))
+#2. kapēc ir 4 ieraksti ar atšķirīgu lauku struktūru? Varbūt tie ir tie, kur playliste satur template?
+
+prob3 = visiPMjobs %>% filter(is.na(recording_id))
+#3. ir 4 ieraksti, kuriem ir NA pie recording_id un recording_local_time. Tie ir tie paši, kuriem ir tā atšķirīgā struktūra (tā vietā ir lauks id)
+
+prob4 = visiPMjobs %>% filter (!is.na(X1))
+#4. ir kaut kādi lauki, kas nāk no tiem 4 atšķirīgajiem ierakstiem, kas nesatur neko. 
+
+rm(prob1, prob2, prob3, prob4)
+```
+
+Augšā sarēķinājām, ka ir jābūt kopā **86'400** ierakstiem, tomēr ir
+**17'540** rindas mums. Kāpēc šī atšķirība?
+
+Diānas atbilde: 17'540 ir tās rindiņas, kuras satur PM mechus, jeb
+fragmentus, kurus viņš uzskata par manu sugu (C.dorsalis).
+
+Tālākajās komandrindās es sakārtošu struktūru.
+
+### Struktūras sakārtošana
+
+Pieņemu, ka:
+
+- lauki X1 - X11 ir lieki, jo tie neko nesatur (13 - 23 kolonnas)
+
+- četri atšķirīgās struktūras ieraksti nāk no kaut kādiem templates un
+  ir noņemami (kolonnas 24 - 35)
+
+Tātad, paturu tikai pirmās 12 kolonnas
+
+```{r}
+# tukšās kolonnas
+visiPMjobs = visiPMjobs[,1:12]
+```
+
+Vēl jānoņem tās 4 rindas, kurām ir tā atšķirīgā struktūra
+
+```{r}
+visiPMjobs = visiPMjobs %>% filter(!is.na(recording_id))
+summary(visiPMjobs)
+```
+
+Paliek 17536 ieraksti, no kuriem visiem ir informācijas kolonnā
+`validated.` Iepriekš nebija, bet Diāna izlaboja (Arbimonā validēja tos
+fragmentus, ko palaida garām) un exportēja jaunu pm results zip mapi ar
+nosaukumu "pattern_matching_results_new2"
+
+Tālāk izvilkšu no faila nosaukuma interesējošos faktorus:
+
+#### Template
+
+```{r}
+# apskatu kā uzbūvēts faila nosaukums
+head (visiPMjobs$file)
+
+# izveidoju kolonnu template, kas veidota, paņemot 4.-7. burtus no faila nosaukuma
+visiPMjobs = visiPMjobs %>% mutate(template = substr(file, 4, 6))
+unique(visiPMjobs$template) # sanāca, bet jānoformē
+
+visiPMjobs = visiPMjobs %>% mutate(template = case_when(
+  template == "0-5" ~ "0.5 sec",
+  template == "1s-" ~ "1.0 sec",
+  template == "2s-" ~ "2.0 sec"
+))
+```
+
+šajā tabuliņā var redzēt cik ieraksti no katras iekārtas playlistes ir
+izmantoti kopā. Laikam bija sagaidāmi citi skaiti. Tev jādomā kāpēc tā.
+Diāna atbilde: es domāju, ka tas skaits saistīts ar to cik daudz PM
+mechu ir konkrētās AudioMoth iekārtas audiofailiem, pēc konkrētā
+template izmantošanas, piem., 1_AiAu03_KZP iekārtai ir 946 PM mechu uz
+0,5 sec template.
+
+Tapat vari apskatīt template, kur arī nav tā, ka no katra ir kaut kāds
+vienmērīgs skaits:
+
+```{r}
+table(visiPMjobs$site_name, visiPMjobs$template)
+```
+
+#### Treshold
+
+```{r}
+# vēlreiz apskatu kā uzbūvēts faila nosaukums, meklēju, kur varu dabūt info par threshold
+head (visiPMjobs$file) # meklēšu pirmos trīs chr, kas parādās aiz "-th-" 
+
+# izveidoju kolonnu trhreshold 
+visiPMjobs = visiPMjobs %>% mutate(threshold = str_extract(file, "(?<=-th-).{3}"))
+unique(visiPMjobs$threshold) # skaisti, varētu pat nepārviedoti izmantot, bet tomēr noformēju. Izdomāju, ka ielikšu kā chr, vienmēr jau var par skaitli pārvēsrst ja vēlāk gribēsies. 
+
+visiPMjobs = visiPMjobs %>% mutate(threshold = case_when(
+  threshold == "0-1" ~ "0.1",
+  threshold == "0-2" ~ "0.2",
+  threshold == "0-3" ~ "0.3"
+))
+
+table(visiPMjobs$site_name, visiPMjobs$threshold)
+```
+
+Man šķiet, ka Tev trūkst vairāki PM darbi.
+
+#### Playlist
+
+Sākumā izvilkšu no faila nosaukuma to dalījumu divās daļās, uzreiz jau
+domājot par noformējumu:
+
+```{r}
+# vēlreiz apskatu kā uzbūvēts faila nosaukums, meklēju, kur varu dabūt info par playlist
+head (visiPMjobs$file) # laikam p1 un p2 būs īstais, labo, ja ne
+
+# izveidoju kolonnu part 
+visiPMjobs = visiPMjobs %>% mutate(part = substr(file, 17, 20))
+unique(visiPMjobs$part) # variē failu nosaukuma garumi, bet no šiem es varu pārveidojot to izvilkt
+
+visiPMjobs = visiPMjobs %>% mutate(part = case_when(
+  part == "-p1-" ~ "480_part_1",
+  part == "-p2-" ~ "480_part_2",
+  part == "6-p1" ~ "480_part_1",
+  part == "6-p2" ~ "480_part_2",
+  part == "1-hf" ~ "480_part_1",
+  part == "2-hf" ~ "480_part_2",
+  part == "p1-h" ~ "480_part_1",
+  part == "p2-h" ~ "480_part_2"
+))
+
+table(visiPMjobs$site_name, visiPMjobs$part)
+```
+
+Izveidošu vēl kolonnu playlist, kur ir apvienots iekārtas nosaukums ar
+part nosaukumu (to jau iepriekš veidoju ar domu, ka tam jābūt noformētam
+vienādi ar visu ierakstu failu, lai var apvienot).
+
+```{r}
+visiPMjobs = visiPMjobs %>% mutate (playlist = paste(site_name, part,sep="_"))
+unique(visiPMjobs$playlist) # jā, ir 20 playlistes
+
+#apskatu attiecībā pret threshold
+table(visiPMjobs$playlist, visiPMjobs$threshold) # nav vienmērīgi. Trūkst atkārtojumu pie 0.3 un arī citur
+
+#apskatu aattiecībā pret template
+table(visiPMjobs$playlist, visiPMjobs$template) # vienmērīgāk, bet arī nav vienādi.
+```
+
+Diāna, tavs darbiņš ir izdomāt kāpēc ir šādi skaitļi, kāpēc nav tā, kā
+mēs abas kopīgi sarēķinājām cik būtu jābūt. Diāna: jau atbildēju, ka tie
+ir tikai PM mechi jo pārējos audio failus viņs vienkārši ignorēja un
+neexportēja no Arbimona
+
+#### Datums un laiks
+
+```{r}
+# izvelku datumu
+visiPMjobs = visiPMjobs %>% mutate (date = as.Date(recording_local_time))
+summary(visiPMjobs$date)
+
+#izvelku laiku
+visiPMjobs = visiPMjobs %>% mutate (time = as_hms(recording_local_time))
+summary(visiPMjobs$time)
+```
+
+## Informācija par visiem ierakstiem
+
+Tagad ielasam informāciju par visiem 9600 ierakstiem, kur katram
+pārbaudīts, vai suga ierakstā ir konstatēta.
+
+```{r}
+visiIeraksti = read_excel("pm_results_online.xlsx", sheet = "manual")  
+#nez kāpēc ielasījās divas tukšas kolonnas galā, tās noņemu 
+visiIeraksti = visiIeraksti[,1:9]
+summary(visiIeraksti)
+```
+
+Būs jāapvieno visi Arbimon pattern matching job csv rezultāti ar šiem
+zināmajiem.
+
+To var izdarīt pēc 3 laukiem, kuru kombinācija ir unikāla: playlist +
+datums + laiks. Tikai pirms tam ir jāpārliecinās par to vienotu
+noformējumu.
+
+#### Playlist
+
+```{r}
+#playlist
+setequal(unique(visiIeraksti$playlist),
+         unique(visiPMjobs$playlist))
+```
+
+abi satur identiskas vērtības, tas labi.
+
+#### Date
+
+Pie visiPMjobs es jau noformēju datumu. Tagad noformēšu, lai arī
+visiIeraksti datums būtu tāpat noformēts. Izskatās jau, ka ir, bet labāk
+novienādot.
+
+```{r}
+visiIeraksti = visiIeraksti %>% mutate (date = as.Date(date))
+summary(visiIeraksti$date)
+summary(visiPMjobs$date)
+```
+
+Datumu noformējums un arī diapozons sakrīt, tas labi. Vienīgi 1, 3
+kvartilles un mediāna nesakrīt, jo kā jau augstāk noskaidrojām, PMjobs
+nav pilnīgi (nav vienmērīgi pārstāvēti visi datumi).
+
+#### Time
+
+Laiks ir kolonnā `hour`. Pārsaukšu to un noformēšu smuki, jo pašlaik tur
+ir klāt kaut kāds random datums (tā notiek ar Posicx laika formātiem,
+tāpēc es arī izmantoju hms)
+
+```{r}
+#izvelku laiku
+visiIeraksti = visiIeraksti %>% 
+  rename(time = hour) %>% 
+  mutate (time = as_hms(time))
+summary(visiIeraksti$time)
+summary(visiPMjobs$time)
+```
+
+Te arī tas pars - noformējums un diapozons sakrīt, bet "iekšiņas"
+citādas.
+
+## Sagatavošanās apvienošanai
+
+Vispirms, ģenerējam IESPĒJAMĀS kombinācijas pattern matching sesijām, jo
+jebkurš ieraksts bija pakļauts 9 uzstādījumu kombinācijām (3 x
+tresholds, 3x template). Tur kur PM konstatēja sugu, tur mums ir datu
+rinda. Kur nekonstatēja - tur rinda nav. Šobrīd mums ir lauks
+"validated", kas satur informāciju vai PM atpazītajā fragmentā pēc
+pārbaudes tika apstiprināta sugas klātbūtne (1 / 0). Tāpēc varbūt labāk
+būtu pārsaukt par validated_fragment, jo iespējams visā 1min ierakstā
+kaut kur citur bija suga sastopama, bet ne konkrētajā fragmentā.
+
+### PM datiem
+
+Mums vajag:
+
+1.  kolonnu kur bija match
+
+2.  kolonnu kur bija pārbaidīti (validēti) šie matchi
+
+3.  identifikatoru pēc playlist, datuma un laika, jo šādā kombinācijā ir
+    iespējams tikai viens ieraksts
+
+```{r}
+# vajag kolonnu, kur atzīmēts, ka šeit visur oriģināli bija match (visur 1, jo citādi šī rinda šajos datos nebūtu, jo PM izmet sākotnēji tikai ierakstus, kur meklēja un atrada, bet nepasaka kur neatrada - tās rindas te nav, tās būs jāģenerē)
+visiPMjobs = visiPMjobs %>% mutate (PM_MATCH = 1)
+
+# kolonna, kas informē vai pēc fragmenta noklausīšanās Diāna apstirpināja, ka ir vai nav (1/0)
+visiPMjobs = visiPMjobs %>% rename (validated_fragment = validated)
+
+# uztaisam identifikatoru - nevajag
+visiPMjobs = visiPMjobs %>% mutate(identifikators = paste(playlist, date, time,template, threshold, sep = "_"))
+length(unique(visiPMjobs$identifikators)) # 8716
+
+#identificējām, ka eksportējot no Arbimon ir kaut kādi dublieri nez kāpēc.
+PMunique = visiPMjobs %>%
+  distinct()
+
+length(unique(PMunique$identifikators)) # 8716 - dublieru vairs nav!
+```
+
+#### Manuālie dati
+
+tagad ģenerēsim visas iespējamās kombinācijas, kādām tika pakļauts katrs
+ieraksts, saglabājot informāciju no validated_fragment lauka.
+
+```{r}
+unique(visiPMjobs$template) # vajag zināt, kā nosaukts tajā otrā tabulā, lai sakrīt
+templates = c("0.5 sec","1.0 sec","2.0 sec")
+
+unique(visiPMjobs$threshold)
+thresholds = c("0.1", "0.2", "0.3")
+
+# izveidoju kombinācijas
+test = expand.grid(
+  template= templates,
+  threshold = thresholds
+)
+
+# attiecināt uz manuālo tabulu, to papildinot
+visiIeraksti = visiIeraksti %>% 
+  crossing(test) 
+  
+# lai būtu saprotamāk, pārsauksim cono_dors par MANUAL_MATCH, lai būtu pilnīgi skaidrs, ka šī ir kolonna, kur atzīmēts, vai visā 1min ieraksta garumā kaut reizi ir konstatēta šī suga (1/0)
+visiIeraksti = visiIeraksti %>% rename (MANUAL_MATCH = cono_dors)
+
+
+# uztaisam identifikatoru - nevajag
+visiIeraksti = visiIeraksti %>% mutate(identifikators = paste(playlist, date, time, template, threshold, sep = "_"))
+length(unique(visiIeraksti$identifikators)) # 86400 - labi
+
+```
+
+## Apvienošana
+
+Tagad vienošu kopā abas tabulas.
+
+Pirms tam pārliecinos, vai nav kaut kādi lieki lauki, bez kuriem varētu
+iztikt.
+
+```{r}
+names(visiIeraksti)# te varu noņemt day, month un year, jo man ir datums, ja vajadzēs vēlāk, to varēs izvilkt. 
+
+visiIeraksti = visiIeraksti %>% select(-c("day","month","year"))
+
+names(visiIeraksti) # vēl varu pārsaukt site par site_name, jo tas ir tas pats
+visiIeraksti = visiIeraksti %>% rename(site_name = site)
+```
+
+Tagad paskatu struktūru otrai tabulai un domāju, kas ir lieks.
+
+```{r}
+names(PMunique)
+
+#noņemu to, kas jau dublējas date un time kolonnā, kā arī 
+# site_id, kas ir tas pats kas site_name, bet skaitlisks, un recording_id, kas arī ir kaut kas mistisks un neredzu kā to izmantot,
+# part, kas jau ir ietverts playlist nosaukumā
+# file, kas manuprāt arī nav vajadzīgs, jo viss jau no tā ir izgūts. Ja gribi, atstāj.
+PMunique = PMunique %>% select(-c("recording_local_time","site_id", "recording_id", "part", "file"))
+
+names(PMunique)
+```
+
+Tagad jāapvieno tā, lai pēc datuma, laika, playlist un site_name
+(pēdējais patiesībā nav vajadzīgs, bet ja nu ir brīnumi, tāpēc atstāju).
+Izmantošu left_join.
+
+Pārējās kolonnas tiek automātiski aizpildītas pēc tā, kas tur pretī ir
+attiecīgi šajā vietā, datumā, laikā. Tur NA nebūs.
+
+```{r}
+visiDati = left_join(visiIeraksti,PMunique, by = c("site_name", "playlist", "date", "time", "template", "threshold"))
+
+#ir par 56 rindiņām par daudz pēc apvienošanas
+
+summary(visiDati)
+```
+
+Apskatam kas ir par daudz:
+
+```{r}
+# Diānas cenšanās atrast problēmu (par tām liekajām 56 rindiņām)
+# Pārbaudu vai PM tabulā ir dublikāti pēc join atslēgas
+PMunique %>%
+  count(site_name, playlist, date, time, template, threshold) %>%
+  filter(n > 1) #šeit viss ir ok, katram thresholam + templatam atbilst 9600
+
+# To pašu darīja arī Rūta tikai šādi:
+table(visiDati$template, visiDati$threshold)
+
+# Paskaties cik tieši ir šādu gadījumu
+PMunique %>%
+  count(site_name, playlist, date, time, template, threshold) %>%
+  filter(n > 1) %>%
+  summarise(extra_rows = sum(n - 1)) # jā parādās 56 extra rows
+
+# Pareizais risinājums — agregēt PM datus
+PMunique <- PMunique %>%
+  group_by(site_name, playlist, date, time, template, threshold) %>%
+  summarise(
+    PM_MATCH = max(PM_MATCH),
+    validated_fragment = max(validated_fragment, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Pārbaudi rindu skaitu
+nrow(PMunique) # 8716 - nu jā dublikātu nav
+
+# Tad veic join vēlreiz
+visiDati = left_join(
+  visiIeraksti,
+  PMunique,
+  by = c("site_name", "playlist", "date", "time", "template", "threshold")
+)
+# Pārbaude
+nrow(visiDati) # VISS OKAY! IR VISOS DATOS 86400 :)
+```
+
+#### Eksports
+
+Eksportēju, lai vari izpētīt. Pielieku datumu galā. Rēķinies, ka katru
+reizi šīs funkcijas izpildot, faili tiks pārrakstīti.
+
+```{r}
+#csv formāts
+write.csv(visiDati, "visiDati_03032026.csv")
+
+#excel formāts
+write_xlsx(visiDati, "visiDati_03032026.xlsx")
+```
+
+fails atrodas darba direktorijā.
+
+pēc darbiņa satīru R vidi, lai būtu brīvs RAMs.
+
+```{r}
+rm(list = ls())
+```
