@@ -1,0 +1,818 @@
+---
+title: "VisiDati Testi un Grafiki"
+author: "Diāna / Rūta"
+date: "2026-04-27"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Darbam nepieciešamās pakotnes
+
+```{r}
+library(readxl) # Excel failu nolasīšanai
+library(tidyverse) # ietver dplyr, ggplot2, stringr un lubridate
+library(nnet) # specifiskiem statistiskajiem modeļiem
+library(pscl) # papildu statistiskajiem aprēķiniem
+```
+
+## Premise
+
+Kas mums ir:
+
+- “ground truth” (MANUAL_MATCH)
+
+- manuālā pārbaude - automātiskā metode (PM_MATCH + validated_fragment (kas apstiprina (1) vai noliedz (0) PM matchus)
+
+- eksperimentālie faktori (mainīgie): threshold (0.1, 0.2, 0.3) un template (0.5, 1.0, 2.0 sec)
+
+Tas nozīmē, ka varu analizēt **detektēšanas varbūtību** un **algoritma precizitāti**.
+
+Sadalīsim to daļās:
+
+1.  Kāds/-i būtu **pareizākais tests**, lai noskaidrotu (pieņemot par [patiesību manuālo pārbaudi]{.underline}), kāda ir kopumā:
+    - varbūtība konstatēt sugu caur PM (pattern matching),
+
+    - kā konstatējamību ietekmē threshold un template.
+2.  Kādi **grafiki** **vislabāk** **parāda** **rezultātus**
+
+[*Mēķis - pārbaudīt, cik labi pattern matching atrod sugu salīdzinot ar manuālo pārbaudi.*]{.underline}
+
+Manuālā pārbaude = **patiesība**
+
+Tātad klasiskā **binary classification problēma**.
+
+| Nosaukums       | Formula        | Nozīme                                      |
+|------------------|------------------|------------------------------------|
+| **Sensitivity** | TP / (TP + FN) | cik bieži PM atrod sugu, kad tā patiešām ir |
+| **Specificity** | TN / (TN + FP) | cik bieži PM pareizi saka, ka sugas nav     |
+| **Precision**   | TP / (TP + FP) | cik uzticams ir PM atrastais match          |
+| **Accuracy**    | (TP + TN)/N    | kopējā precizitāte                          |
+
+: T - True, F - False, P - Positive, N - Negative
+
+Mums ir **binārs rezultāts (0/1)**.
+
+Tas ļauj novērtēt:
+
+- vai **threshold ietekmē detekcijas varbūtību**
+
+- vai **template ietekmē detekciju**
+
+- vai kā šo divu mainīgo **kombinācija** ietekme detekciju
+
+# Datu sagatavošana
+
+```{r}
+#working directory
+#setwd("C:/Users/Diana/OneDrive/Dators/###/Dokumenti/Studijas/BIO BAKALAURS/Bakalaura darbs/Arbinom VISI DATI")
+
+#datu ielasīšana (excel fails)
+visiDati <- read_excel("visiDati_03032026.xlsx")
+
+# pārbaudu vērtības PM_MATCH
+unique(visiDati$PM_MATCH)
+
+# NA → 0
+visiDati <- visiDati %>%
+  mutate(
+    PM_MATCH = replace_na(PM_MATCH, 0),
+    validated_fragment = replace_na(validated_fragment, 0))
+
+# Laika pārvēršana
+visiDati$time <- as.POSIXct(visiDati$time, format = "%H:%M:%S")
+
+# Stundas, minūtes
+visiDati$stundas  <- as.numeric(format(visiDati$time, "%H"))
+visiDati$minutes  <- as.numeric(format(visiDati$time, "%M"))
+visiDati$sekundes <- as.numeric(format(visiDati$time, "%S"))
+
+# Decimālstunda
+visiDati$DNstunda <- visiDati$stundas +
+                     visiDati$minutes / 60 +
+                     visiDati$sekundes / 3600
+
+unique(visiDati$DNstunda)
+```
+
+## 1. UZDEVUMS
+
+*Uzdevuma mērķis -* Salīdzināt automātiskās un manuālās detektēšanas rezultātus, lai novērtētu ARBIMON parauga atbilstības rīka spēju detektēt sugas Conocephalus dorsalis klātbūtni
+
+**Īsumā “Salīdzināt automātisko un manuālo detektēšanu”**
+
+### 1.1. Kļūdu matrica
+
+```{r}
+# 1.1. Kļūdu matrica
+tab <- table(visiDati$MANUAL_MATCH, visiDati$PM_MATCH)
+tab
+```
+
+**Kļūdu matrica**
+
+|          | PM=0                 | PM=1               |
+|----------|----------------------|--------------------|
+| MANUAL=0 | TN (n=66665, 77.15%) | FP (n=5587, 6.47%) |
+| MANUAL=1 | FN (n=11036, 12.77%) | TP (n=3112, 3.6 %) |
+
+- **TP (True Positive / patiesi pozitīvs)** – gadījums, kad automātiskais rīks nosaka, ka suga ir klātesoša, un tas sakrīt ar manuālo pārbaudi; tātad suga ir **pareizi identificēta**.
+
+- **FP (False Positive / kļūdaini pozitīvs)** – gadījums, kad automātiskais rīks nosaka, ka suga ir, bet manuāli tiek konstatēts, ka tās nav; tātad notikusi **kļūdaina “viltus” detekcija**.
+
+- **FN (False Negative / kļūdaini negatīvs)** – gadījums, kad automātiskais rīks nenosaka sugas klātbūtni, lai gan manuāli ir apstiprināts, ka suga tur ir; tātad suga ir **palaista garām**.
+
+- **TN (True Negative / patiesi negatīvs)** – gadījums, kad automātiskais rīks pareizi nosaka, ka suga nav klātesoša, un tas sakrīt ar manuālo pārbaudi; tātad ieraksts ir **pareizi atzīts par negatīvu**.
+
+```{r}
+# 1.2. Aprēķinu METRIKAS
+TN <- tab[1,1]
+FP <- tab[1,2]
+FN <- tab[2,1]
+TP <- tab[2,2]
+
+sensitivity <- TP/(TP+FN)
+specificity <- TN/(TN+FP)
+precision   <- TP/(TP+FP)
+accuracy    <- (TP+TN)/sum(tab)
+
+results <- data.frame(
+  Metric = c("TP","FN","FP","TN","Sensitivity","Specificity","Precision","Accuracy"),
+  Proportion = c(TP/86400,
+            FN/86400,
+            FP/86400,
+            TN/86400,
+            sensitivity,specificity,precision,accuracy))
+
+knitr::kable(results, digits = 3)
+```
+
+**Refleksijapar MATRIKA rezultātiem:**
+
+1.  **TP (True Positives)** – Automātiskā detektēšana pareizi identificēja sugas klātbūtni **3112 gadījumos (0.036 jeb 36%)**, kas norāda, ka sistēma spēj konstatēt sugu, taču šādu gadījumu skaits ir salīdzinoši neliels attiecībā pret kopējo klātbūtnes gadījumu skaitu.
+
+2.  **FN (False Negatives)** – **11036 gadījumos (0.128 jeb 12.8%)** suga bija klātesoša, bet netika detektēta, kas liecina par būtisku problēmu – algoritms bieži neidentificē reālu sugas klātbūtni (t.i., “palaiž garām” patiesos gadījumus).
+
+3.  **FP (False Positives)** – **5587 gadījumos (0.065 jeb 6.5%)** algoritms kļūdaini noteica sugas klātbūtni, kas nozīmē, ka sistēma salīdzinoši bieži rada kļūdaini pozitīvus rezultātus (t.i., “atrod sugu tur, kur tās nav”).
+
+4.  **TN (True Negatives)** – **66665 gadījumos (0.772 jeb 77.2%)** sistēma pareizi noteica, ka suga nav klātesoša, kas veido lielāko daļu datu un būtiski ietekmē kopējo precizitāti.
+
+5.  **Sensitivity (jutība)** – **0.220**, kas nozīmē, ka tikai **22.0%** gadījumu, kad suga patiešām ir klātesoša, tā tiek automātiski detektēta; tas norāda uz **zemu spēju identificēt reālu klātbūtni**.
+
+6.  **Specificity (specifiskums)** – **0.923**, kas nozīmē, ka **92.3%** gadījumu, kad sugas nav, sistēma to pareizi nosaka; tas liecina par **labu spēju atpazīt negatīvos gadījumus**.
+
+7.  **Precision (precizitāte pozitīvajiem)** – **0.358**, kas nozīmē, ka tikai **35.8%** no automātiski noteiktajiem pozitīvajiem gadījumiem ir patiesi; tas norāda uz **zemu uzticamību pozitīvajiem rezultātiem**.
+
+8.  **Accuracy (kopējā precizitāte)** – **0.808**, kas nozīmē, ka **80.8%** gadījumu ir klasificēti pareizi; tomēr šo rādītāju būtiski ietekmē lielais patiesi negatīvo gadījumu īpatsvars.
+
+[SECINĀJUMS:]{.underline}
+
+Rezultāti parāda, ka automātiskā detektēšana relatīvi labi identificē gadījumus, kuros suga nav klātesoša, taču tai ir zema jutība un zema pozitīvo rezultātu precizitāte, kas nozīmē, ka tā bieži gan neatrod reālu klātbūtni, gan rada kļūdainus pozitīvus rezultātus.
+
+Tas norāda, ka metode šobrīd nav pietiekami uzticama precīzai sugas klātbūtnes noteikšanai bez papildu validācijas.
+
+[Šie testi labi parāda rezultātus, bet ņemot vērā to, ka paraugu atbilstības rīks tika pakļauts parametriem un paraugu dažādībai, izriet 2. darba uzdevums, kas apskatīs rezultatus dziļāk.\]{.underline}
+
+## 2. UZDEVUMS
+
+*Uzdevuma mērķis -* Novērtēt audio parauga garuma un automātiskās detektēšanas jutības sliekšņa ietekmi uz patiesas klātbūtnes konstatēšanas varbūtību
+
+True presence probability \~ th + sample (daudzfaktoru regresija vai GLM)
+
+Šajā gadījumā True presence ir laukā "validated_fragment", kur 1 nozīmē, ka PM atpazina fragmentu pareizi.
+
+### 2.1. GLM modeļi
+
+Atbildes mainīgais ir binārs (1/0) līdz ar to veidoju bināros lineārās regresijas modeļus.
+
+Jāapsver neatkarīgo mainīgo pārvēršana par skaitliskiem [num] (šobrīd ir kategorijas [chr], katrā trīs)
+
+```{r}
+
+visiDati2 = visiDati %>% mutate (threshold = as.numeric(threshold),
+                                 template = case_when(
+                                   template == "0.5 sec" ~ 0.5,
+                                   template == "1.0 sec" ~ 1.0,
+                                   template == "2.0 sec" ~ 2.0
+                                 ))
+unique(visiDati2$threshold) # pareizi, numeric
+unique(visiDati2$template) # pareizi, numeric
+
+# papildus pārbaude
+tab2 <- table(visiDati2$validated_fragment, visiDati$PM_MATCH)
+tab2
+# viss pariezi 
+
+# labojums - pareizi jādefinē atkarīgais mainīgais, un ir jāveido vairāki modeļi, lai noskaidrotu, vai ir ietkme atsevišķiem mainīgajiem vai to kombinācijām un kas labāk izskaidro atbildes mainīgā variāciju
+
+model1 <- glm(
+  validated_fragment ~ threshold,
+  data = visiDati2,
+  family = "binomial")
+
+summary(model1) # AIC: 18169, th būtiski negatīvi ietekmē spēju pareizi klasificēt klātbūtni
+pR2(model1) # modelis (threshold) pēc McFadden pseidodeterminācijas koeficienta izskaido 11.7% no spējas pareizi identificēt patiesu sugas klātbūtni
+
+model2 <- glm(
+  validated_fragment ~ template,
+  data = visiDati2,
+  family = "binomial")
+
+summary(model2) # AIC: 20265 - lielāka, bet template garums ietekmē spēju pareizi atrast klātbūtni būtiski negatīvi, proti - ar īsāku paraugu PM_MATCH strādā labāk. Jāpadomā kā interpretēt, bet šis varētu būt specifiski taisnspārņiem. Te var arī pārbaudīt kā ir ar pašu PM_MATCH (kas ietver gan true pos, gan false pos).
+
+pR2(model2) # parauga garums izskaidro tikai 1,5% no spējas pareizi identificēt patiesu sugas klātbūtni
+
+model3 <- glm(
+  validated_fragment ~ threshold*template,
+  data = visiDati2, # lai pārvērstu par kategorijām, nomaina te uz visiDati
+  family = "binomial")
+
+summary(model3) # AIC: 17496 (līdz šim labākais modelis), un arī visi būtiski, bet katrs par sevi
+pR2(model3) # 15% izskaidrotā variācija
+
+# vizualizēšanai
+th_seq = seq(min(visiDati2$threshold), max(visiDati2$threshold), length.out = 10)
+temp_seq = seq(min(visiDati2$template), max(visiDati2$template), length.out = 10)
+
+faktori = expand.grid(threshold = th_seq,
+                   template = temp_seq)
+
+faktori$prob = predict(model3, newdata = faktori, type = "response")
+
+# heatmap 
+ggplot(faktori, aes(x = threshold, y = template, fill = prob)) +
+  geom_raster()+
+  scale_fill_viridis_c(
+    name = "Pareizas klasificēšanas varbūtība\nProbability of correct classification",
+    limits = c(0,1)
+  )+
+  theme_minimal() #šāda tipa grafikā šie dati nav labi pārskatāmi 
+
+```
+
+#### Alternatīvi (līnijgrafiks)
+
+```{r}
+visiDati3 = visiDati %>% mutate (threshold = as.numeric(threshold))
+unique(visiDati3$threshold) # pareizi, numeric
+unique(visiDati3$template) # pareizi, kā kategorijas
+
+model1_3 <- glm(
+  validated_fragment ~ threshold,
+  data = visiDati3,
+  family = "binomial")
+
+summary(model1_3) # AIC: 18169, th būtiski negatīvi ietekmē spēju pareizi klasificēt klātbūtni
+pR2(model1_3) # modelis (threshold) pēc McFadden pseidodeterminācijas koeficienta izskaido 11.7% no spējas pareizi identificēt patiesu sugas klātbūtni
+
+
+model2_3 <- glm(
+  validated_fragment ~ template,
+  data = visiDati3,
+  family = "binomial")
+
+summary(model2_3) # AIC: 19807 - lielāka, bet template garums (kā kategorija) ietekmē spēju pareizi atrast klātbūtni būtiski negatīvi, proti - ar īsāku paraugu PM_MATCH strādā labāk. Jāpadomā kā interpretēt, bet šis varētu būt specifiski taisnspārņiem. Te var arī pārbaudīt kā ir ar pašu PM_MATCH (kas ietver gan true pos, gan false pos).
+
+pR2(model2_3) # parauga garums izskaidro tikai 3,7% no spējas pareizi identificēt patiesu sugas klātbūtni
+
+model3_3 <- glm(
+  validated_fragment ~ threshold*template,
+  data = visiDati3, # lai pārvērstu par kategorijām, nomaina te uz visiDati
+  family = "binomial")
+
+summary(model3_3) # AIC: 17134 (līdz šim labākais modelis), un arī visi būtiski, bet katrs par sevi
+pR2(model3_3) # 16,8% izskaidrotā variācija
+
+# vizualizēšanai lai grafiks būtu smooth (gludāks nevis lausta līnija)
+th_seq3 = seq(min(visiDati3$threshold), max(visiDati3$threshold), length.out = 10)
+
+faktori3 = expand.grid(template=c("0.5 sec","1.0 sec","2.0 sec"),threshold=th_seq3)
+
+prognoze3= predict(model3_3, newdata = faktori3, type = "link", se.fit = TRUE)
+
+#aprēķinu CI 
+z <- qnorm(0.975) # CI kritiskā vērtība
+
+faktori3$pred = prognoze3$fit
+faktori3$pred_SE = prognoze3$se.fit 
+
+faktori3$prob    <- plogis(prognoze3$fit)
+faktori3$SE      <- prognoze3$se.fit * faktori3$prob * (1 - faktori3$prob)
+faktori3$lower   <- plogis(prognoze3$fit -z*prognoze3$se.fit)
+faktori3$upper   <- plogis(prognoze3$fit +z*prognoze3$se.fit)
+
+#GRAFIKS ar template + threshold ietekmi uz pareizu detektēšanu
+ggplot(faktori3, aes(threshold, prob, colour = template)) +
+  
+  # pelēkais "mākonis" (bez rāmja)
+  geom_ribbon(
+    aes(ymin = lower, ymax = upper, fill = template),
+    alpha = 0.2,
+    colour = NA   # <- noņemu rāmīti
+    ) +
+  
+  # līnija pa vidu (biezums)
+  geom_line(linewidth = 0.7) +
+  
+  scale_x_continuous(
+    breaks = c(0.1, 0.2, 0.3),
+    labels = c("0.1", "0.2", "0.3")) +
+  
+  # krāsas
+  scale_color_manual(values = c(
+    "0.5 sec" = "#DDAA33",
+    "1.0 sec" = "#BB5566",
+    "2.0 sec" = "#458B00")) +
+  
+  scale_fill_manual(values = c(
+    "0.5 sec" = "#DDAA33",
+    "1.0 sec" = "#BB5566",
+    "2.0 sec" = "#458B00")) +
+  
+  theme_classic() +
+  
+  labs(
+    x = "Jutības sliekšņa vērtība / Threshold",
+    y = "Patiesas klātbūtnes konstatēšanas varbūtība \n True presence detection probability",
+    color = "Paraugieraksta garums (s) \n Template length (s)",
+    fill  = "Paraugieraksta garums (s) \n Template length (s)")
+
+
+# 9 kombinācijas (3x3)
+faktori4 = expand.grid(
+  template = c("0.5 sec","1.0 sec","2.0 sec"),
+  threshold = c(0.1, 0.2, 0.3))
+
+# prognozes
+prognoze4 = predict(model3_3, newdata = faktori4, type = "link", se.fit = TRUE)
+
+# CI aprēķins
+z <- qnorm(0.975)
+
+faktori4$pred     <- prognoze4$fit
+faktori4$pred_SE  <- prognoze4$se.fit
+
+faktori4$prob  <- plogis(prognoze4$fit)
+faktori4$lower <- plogis(prognoze4$fit - z * prognoze4$se.fit)
+faktori4$upper <- plogis(prognoze4$fit + z * prognoze4$se.fit)
+
+# rezultāts
+faktori4 %>%
+  arrange(template, threshold)
+```
+
+**Refleksija par GLM rezultātiem:**
+
+**Modeļa konverģence un stabilitāte**\
+Visi trīs GLM modeļi veiksmīgi konverģē bez brīdinājumiem, un standartkļūdas ir salīdzinoši nelielas. Tas norāda, ka parametru novērtējumi ir stabili un dati ir pietiekami informatīvi, lai ticami novērtētu gan `threshold`, gan `template`, gan to mijiedarbību.
+
+**Modeļu salīdzinājums (deviance, AIC, skaidrotspēja)**\
+Salīdzinot modeļus, redzams skaidrs uzlabojums, pievienojot papildus faktorus:
+
+- Modelis ar **threshold**:
+
+  - AIC = 18169
+
+  - McFadden R² ≈ 0.117\
+    Sliekšņa vērtība viena pati jau būtiski ietekmē detektēšanas varbūtību.
+
+- Modelis ar **template**:
+
+  - AIC = 19807
+
+  - McFadden R² ≈ 0.038\
+    Parauga garums viens pats izskaidro mazāku variācijas daļu.
+
+- **Kombinētais modelis (threshold × template)**:
+
+  - AIC = 17134 (zemākais → labākais modelis)
+
+  - McFadden R² ≈ 0.168 (\~16.8%)
+
+  - Residual deviance samazinās no 20581 līdz 17122
+
+Tas skaidri parāda, ka abu faktoru kombinācija būtiski uzlabo modeļa kvalitāti, un īpaši svarīga ir **mijiedarbība (interaction)** starp `threshold` un `template`.
+
+**Ko nozīmē koeficienti (interpretācija)**
+
+- `threshold` ir **spēcīgi negatīvs efekts** (Estimate ≈ -13 līdz -26 atkarībā no template), kas nozīmē:\
+  → pieaugot slieksnim, **strauji samazinās pareizas detekcijas varbūtība**.
+
+- `template` efekts:
+
+  - 1.0 sec pats par sevi nav būtisks (p ≈ 0.76)
+
+  - 2.0 sec ir pozitīvs (Estimate ≈ +1.91), bet…
+
+  **interaction termini ir ļoti būtiski un negatīvi**, kas nozīmē:\
+  pie lielākiem sliekšņiem garāki template kļūst daudz neefektīvāki.
+
+[**9 kombināciju interpretācija:**]{.underline}
+
+Tālāk redzamas prognozētās varbūtības (`prob`) katrai kombinācijai:
+
+Template: 0.5 sec
+
+- **0.1** \~0.102 (10.2%)
+
+- **0.2** \~0.030 (3.0%)
+
+- **0.3** \~0.008 (0.8%)
+
+Īsākais fragments dod **visaugstāko detekcijas varbūtību visos sliekšņos**.\
+Tomēr arī šeit redzams straujš kritums, palielinot threshold.
+
+Template: 1.0 sec
+
+- **0.1** \~0.031 (3.1%)
+
+- **0.2** \~0.0023 (0.23%)
+
+- **0.3** \~0.00016 (0.016%)
+
+Jau pie 0.1 sliekšņa varbūtība ir \~3× mazāka nekā 0.5 sec gadījumā.\
+Pie lielākiem sliekšņiem detekcija praktiski pazūd.
+
+Template: 2.0 sec
+
+- **0.1** \~0.055 (5.5%)
+
+- **0.2** \~0.0012 (0.12%)
+
+- **0.3** \~0.000025 (0.0025%)
+
+Interesanti:
+
+- pie **zemākā sliekšņa (0.1)** šis variants ir labāks nekā 1.0 sec
+
+- bet pie augstākiem sliekšņiem tas kļūst **visneefektīvākais**
+
+Galvenā likumsakarība
+
+- **Threshold ir dominējošais faktors**\
+  neliels pieaugums (0.1 → 0.3) samazina varbūtību pat par **10–100×**
+
+- **Template efekts ir atkarīgs no threshold (interaction)**\
+  nav viena “labākā” garuma visos gadījumos, bet kopumā:
+
+  - pie zema threshold (0.1) vēl var konkurēt dažādi garumi
+
+  - pie augstāka threshold vislabāk strādā **īsākais (0.5 sec)**
+
+Interpretācija praktiskā nozīmē
+
+- Augstāks slieksnis padara algoritmu konservatīvāku → mazāk false positives, bet arī **strauji samazinās true positives**
+
+- Garāki fragmenti (1.0–2.0 sec) iespējams:
+
+  - satur vairāk trokšņa vai variācijas
+
+  - un pie stingrākiem sliekšņiem tos grūtāk atpazīt
+
+[SECINĀJUMS]{.underline}:
+
+Uzdevuma mērķis bija novērtēt audio parauga garuma (`template`) un detektēšanas sliekšņa (`threshold`) ietekmi uz patiesas klātbūtnes konstatēšanas varbūtību (`validated_fragment`).
+
+Rezultāti skaidri parāda, ka:
+
+- **threshold ir visspēcīgākais faktors**, kas negatīvi ietekmē detekcijas varbūtību
+
+- **template efekts nav vienkāršs**, bet būtiski mijiedarbojas ar threshold
+
+- kombinētais modelis (GLM ar interaction) vislabāk apraksta datus (AIC = 17134, R² ≈ 16.8%)
+
+Praktiski tas nozīmē:\
+**optimālai detekcijai jāizvēlas zemāks slieksnis un īsāks audio fragments**, jo īpaši gadījumos, kad svarīgi maksimāli palielināt patiesas klātbūtnes noteikšanu.
+
+Proporciju analīze parāda, ka **detektēšanas varbūtība (proportion of correct detections)** būtiski samazinās, palielinoties threshold vērtībai. Tas nozīmē, ka algoritms kļūst **konservatīvāks (retāk pieņem, ka suga ir klātesoša)**.
+
+Vienlaikus novērojams, ka **parauga garums (template)** ietekmē rezultātus – garāki paraugi parasti uzrāda zemāku detektēšanas varbūtību, kas var būt saistīts ar sarežģītāku signāla struktūru.
+
+## Citi vizuāli attēloti rezultāti
+
+### Kā diennakts laiks ietekmē identificēšanu ar PM un Audiovizuāli
+
+```{r}
+# Datu sagatavošana
+visiDati_long2 <- visiDati %>%
+  
+  select(DNstunda, MANUAL_MATCH, PM_MATCH) %>%
+  
+  pivot_longer(
+    cols = c(MANUAL_MATCH, PM_MATCH),
+    names_to = "method",
+    values_to = "detection")
+
+model_time2 <- glm(
+  detection ~ method +
+    sin(2*pi*DNstunda/24) +
+    cos(2*pi*DNstunda/24) +
+    method:sin(2*pi*DNstunda/24) +
+    method:cos(2*pi*DNstunda/24),
+  data = visiDati_long2,
+  family = "binomial")
+
+time_seq2 <- expand.grid(
+  DNstunda = seq(0, 24, by = 0.1),
+  method = c("MANUAL_MATCH", "PM_MATCH"))
+
+pred2 <- predict(
+  model_time2,
+  newdata = time_seq2,
+  type = "link",
+  se.fit = TRUE)
+
+time_seq2 <- time_seq2 %>%
+  mutate(
+    fit = pred2$fit,
+    se  = pred2$se.fit,
+    pred = plogis(fit),
+    lower = plogis(fit - 1.96 * se),
+    upper = plogis(fit + 1.96 * se))
+
+# Grafiks
+
+ggplot(time_seq2, aes(x = DNstunda, y = pred, color = method, fill = method)) +
+
+  geom_rect(xmin = 20.18, xmax = 24, ymin = -Inf, ymax = Inf,
+            fill = "grey80", alpha = 0.4, inherit.aes = FALSE) +
+
+  geom_rect(xmin = 0, xmax = 6.29, ymin = -Inf, ymax = Inf,
+            fill = "grey80", alpha = 0.4, inherit.aes = FALSE) +
+
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.2, color = NA) +
+
+  geom_line(linewidth = 1.3) +
+
+  scale_x_continuous(
+    breaks = seq(0, 24, 2),
+    limits = c(0, 24)) +
+
+  scale_color_manual(
+    values = c(
+      "MANUAL_MATCH" = "#1B9E77",
+      "PM_MATCH" = "#D95F02"),
+    labels = c(
+      "MANUAL_MATCH" = "Audiovizuāli / Audiovisually",
+      "PM_MATCH" = "Paraugu atbilstības rīks\nPattern matching tool")) +
+
+  scale_fill_manual(
+    values = c(
+      "MANUAL_MATCH" = "#1B9E77",
+      "PM_MATCH" = "#D95F02"),
+    labels = c(
+      "MANUAL_MATCH" = "Audiovizuāli / Audiovisually",
+      "PM_MATCH" = "Paraugu atbilstības rīks\nPattern matching tool")) +
+
+  theme_classic() +
+
+  labs(
+    x = "Diennakts laiks / Hour of day",
+    y = "Iespējamās klātbūtnes noteikšanas varbūtība\nProbability of detecting a possible presence",
+    color = "Sugas konstatēšanas metode\nSpecies identification method",
+    fill  = "Sugas konstatēšanas metode\nSpecies identification method")
+```
+
+### Diennakts aktivitātes grafiks
+
+Ja grib analizēt sugas klātbūtni, tad ir MANUAL jāizmanto par atbildes mainīgo!
+
+```{r}
+# Modelis
+model_time <- glm(
+  MANUAL_MATCH ~ sin(2*pi*DNstunda/24) + cos(2*pi*DNstunda/24),
+  data = visiDati,
+  family = "binomial")
+
+# Dati
+time_seq <- data.frame(
+  DNstunda = seq(0, 24, by = 0.1))
+
+pred <- predict(
+  model_time,
+  newdata = time_seq,
+  type = "link",
+  se.fit = TRUE)
+
+time_seq <- time_seq %>%
+  mutate(
+    fit = pred$fit,
+    se  = pred$se.fit,
+    pred = plogis(fit),
+    lower = plogis(fit - 1.96 * se),
+    upper = plogis(fit + 1.96 * se))
+
+# GRAFIKS
+ggplot(time_seq, aes(x = DNstunda, y = pred)) +
+
+  # nakts zonas
+  geom_rect(
+    xmin = 20.18, xmax = 24,
+    ymin = -Inf, ymax = Inf,
+    fill = "grey80", alpha = 0.4) +
+
+  geom_rect(
+    xmin = 0, xmax = 6.29,
+    ymin = -Inf, ymax = Inf,
+    fill = "grey80", alpha = 0.4) +
+
+  # uzticamības intervāls
+  geom_ribbon(
+    aes(ymin = lower, ymax = upper),
+    fill = "#A6BDD7", alpha = 0.4) +
+
+  # līkne
+  geom_line(linewidth = 1.3, color = "#332288") +
+
+  theme_classic() +
+
+  scale_x_continuous(
+    breaks = seq(0, 24, 2),
+    limits = c(0, 24)) +
+
+  labs(
+    x = "Diennakts laiks / Hour of day",
+    y = "Konstatēšanas varbūtība / Detection probability")
+
+```
+
+Mans viedoklis: Nu šis vienkārši labs standara informācijai par sugas aktivitāti diennaktī. Neko pielikt ne atņmet :) Ja kas tur ir arī "kļūdu mākonis" gar to līniju, bet viņš ir tik maziņš, ka neredz, bet viņš tur ir. Turklāt dienas un nakts iestāšanās laiks tika rēķināts pēc vidējās pētījuma dienās saules norietēšanas un uzlekšanas laika - šim ir pievērsta rūpīga uzmanība!
+
+Saullēkta/saulrieta sīkāks paskaidrojums:
+
+Tā kā visi audio ieraksti tika tika veikt 20 dienas no 23. augusta līdz 11. septembrim 2025. gadā, lai grafikā norādītu nakts sākumu un beigas, tika izvēlēts vidējais saulrieta un saullēkta laiks no visām 20 dienām. Proti, saulriets 1. septembra vakarā (20:18), bija saullēks 2. septembra rītā (6:29).
+
+### Procenti pa biotopiem
+
+“Pattern matching precizitāte (%) pa vietām”
+
+```{r}
+# Sagatavo datus 
+site_summary <- visiDati %>%
+  # pārsauc site
+  mutate(site_name = paste0(
+    str_extract(site_name, "^[0-9]+"), " ",
+    ifelse(str_detect(site_name, "KZP"), "KZP", "DA")
+  )) %>%
+  filter(PM_MATCH == 1) %>%  
+  mutate(type = ifelse(validated_fragment == 1,
+                       "Pareizi pozitīva / True Positive",
+                       "Negatīvi pozitīva / False Positive")) %>%
+  group_by(site_name, type) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Procenti
+pm_summary <- site_summary %>%
+  group_by(site_name) %>%
+  mutate(percent = count / sum(count) * 100) %>%
+  ungroup()
+
+
+# Datu kārtošanas loģika
+# Izveidojam palīgtabulu, kas aprēķina "Pareizo" procentus un grupu
+site_order_data <- pm_summary %>%
+  mutate(
+    # Atlasām tikai pareizos procentus kārtošanai (ja nav, ieliekam 0)
+    correct_percent = ifelse(str_detect(type, "Pareizi pozitīva"), percent, 0)
+  ) %>%
+  group_by(site_name) %>%
+  summarise(
+    correct_percent = sum(correct_percent),
+    # Piešķiram KZP grupai 1, bet DA grupai 2, lai KZP vienmēr būtu pirmie
+    group_order = ifelse(str_detect(first(site_name), "KZP"), 1, 2),
+    .groups = "drop" ) %>%
+  # Kārtojam sākumā pēc grupas (1=KZP, 2=DA), pēc tam dilstoši pēc pareizajiem %
+  arrange(group_order, desc(correct_percent))
+
+# Pārveidojam site_name par faktoru, izmantojot mūsu izveidoto secību
+pm_summary <- pm_summary %>%
+  mutate(site_name = factor(site_name, levels = site_order_data$site_name))
+
+# Grafiks
+
+ggplot(pm_summary, aes(x = site_name, y = percent, fill = type)) +
+  
+  geom_col(position = "stack") +
+  
+  geom_text(
+    aes(label = paste0(round(percent, 1), "%")),
+    position = position_stack(vjust = 0.5),
+    size = 2.7 ) +
+  
+  scale_fill_manual(values = c(
+    "Pareizi pozitīva / True Positive" = "#90EE90",
+    "Negatīvi pozitīva / False Positive" = "#DDAA33")) + 
+  
+  theme_classic() +
+  
+  labs(
+    x = "Vieta / Site",
+    y = "Konstatēšanas varbūtība (%) \nDetection probability (%)",
+    fill = "Paraugu atbilstības rīka precizitāte \nPattern matching tool accuracy ")+
+  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Mans viedoklis: Laba ideja, labi parāda kļūdu un pareizo detekciju sakitu uz visu 10 audiomothu fona un pa biotopiem.
+
+```{r}
+# Datu sagatavošana ar laika filtrēšanu (izmantojot lubridate)
+dati_ar_laiku <- visiDati %>%
+  # Pārvēršam laiku par stundām (decimāldaļās), lai viegli salīdzinātu
+  # Ja 'time' jau ir POSIXct (kā redzams tavā skriptā iepriekš), izmantojam hour() un minute()
+  mutate(laiks_decimal = hour(time) + minute(time)/60 + second(time)/3600) %>%
+  
+  # Definējam robežas: 6:29 ir 6.4833, 20:18 ir 20.3
+  mutate(period = ifelse(laiks_decimal >= (6 + 29/60) & 
+                         laiks_decimal < (20 + 18/60), 
+                         "Diennakts gaišais laiks / Daylight hours", 
+                         "Diennakts tumšais laiks / Hours of darkness")) %>%
+  
+  # Vietu nosaukumu sakārtošana (tava loģika)
+  mutate(site_name = paste0(
+    str_extract(site_name, "^[0-9]+"), " ",
+    ifelse(str_detect(site_name, "KZP"), "KZP", "DA")
+  )) %>%
+  filter(PM_MATCH == 1) %>%
+  mutate(type = ifelse(validated_fragment == 1,
+                       "Pareizi pozitīva / True Positive",
+                       "Negatīvi pozitīva / False Positive"))
+
+# Aprēķinām procentus katram periodam un katrai vietai
+summary_periodi <- dati_ar_laiku %>%
+  group_by(period, site_name, type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(period, site_name) %>%
+  mutate(percent = count / sum(count) * 100) %>%
+  ungroup()
+
+# Kārtošanas loģika (identiska tavai iepriekšējai, lai KZP būtu pirmie)
+order_logic <- summary_periodi %>%
+  filter(str_detect(type, "Pareizi")) %>%
+  group_by(site_name) %>%
+  summarise(
+    max_correct = max(percent),
+    group_order = ifelse(str_detect(first(site_name), "KZP"), 1, 2)
+  ) %>%
+  arrange(group_order, desc(max_correct))
+
+summary_periodi <- summary_periodi %>%
+  mutate(site_name = factor(site_name, levels = order_logic$site_name)) %>%
+  # Pievienojam krāsu loģiku tekstam (balts uz tumši zila, melns uz oranža)
+  mutate(label_color = ifelse(str_detect(type, "Pareizi"), "black", "black"))
+
+# 4. GRAFIKS ar facet_wrap
+ggplot(summary_periodi, aes(x = site_name, y = percent, fill = type)) +
+  geom_col(position = "stack", color = "grey20", linewidth = 0.2) + 
+  
+  # Sadalām divos grafikos (viens virs otra)
+  facet_wrap(~period, ncol = 1) + 
+  
+  geom_text(
+    aes(label = paste0(round(percent, 1), "%"), color = label_color),
+    position = position_stack(vjust = 0.5),
+    size = 2.5,
+    fontface = "bold"
+  ) +
+  
+  # Izmantojam drošās krāsas (Zils/Oranžs), ko ieteicu iepriekš
+  scale_fill_manual(values = c(
+    "Pareizi pozitīva / True Positive" = "#90EE90", 
+    "Negatīvi pozitīva / False Positive" = "#DDAA33"
+  )) +
+  scale_color_manual(values = c("black" = "black", "black" = "black"), guide = "none") +
+  
+  theme_bw() + 
+  labs(
+    x = "Vieta / Site",
+    y = "Procentuālais sadalījums (%)\nPercentage distribution (%)",
+    fill = "Paraugu atbilstības rīka precizitāte, \nnosakot sugas klātbūtni \nPattern matching tool accuracy \nfor detecting the presence of a species"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.background = element_rect(fill = "grey95"),
+    strip.text = element_text(face = "bold"))
+```
+
+## HIPOTĒZES SECINĀJUMS
+
+1.  Automātiskās klātbūtnes noteikšanas precizitāte ir atkarīga no izmantotā paraugieraksta garuma un uzstādītajiem parametriem. 
+
+Hipotēze tiek apstiprināta. **Automātiskā sugas klātbūtnes noteikšana** ar paraugu atbilstības metodi spēj noteikt sugas klātbūtni, taču tai raksturīga **zema jutība un precizitāte pozitīvajos gadījumos**, salīdzinot ar **audiovizuālo pieeju**, kas nodrošina **ticamākus rezultātus**.
+
+2.  Automātiskā sugas klātbūtnes konstatēšana bioakustiskajos datos ir iespējama, tomēr nav tik precīza, kā sugas konstatēšana pārbaudot ierakstus audiovizuāli.
+
+Hipotēze tiek apstiprināta. **Parauga garums** un **jutības slieksnis** būtiski ietekmē rezultātus – **palielinoties jutības slieksnim**, klātbūtnes noteikšanas varbūtība **samazinās**, un **garāki paraugi** ne vienmēr uzlabo noteikšanu, tāpēc **rezultātu precizitāte ir tieši atkarīga no izvēlētajiem iestatījumiem**.
+
+## Beigas
+
+```{r}
+rm(list = ls())
+
+```
