@@ -1,12 +1,14 @@
 # ARBIMON parauga atbilstības rīka pielietojuma efektivitāte _Conocephalus dorsalis_ (Insecta: Orthoptera) automātiskai klātbūtnes noteikšanai
 
-Bakalaura darbs (Autors: Diāna Berezovska)
+Bakalaura darbs 
+(Autors: Diāna Berezovska)
 
 Repozitorija ir veidota bakalaura darbam ar nosaukumu "ARBIMON parauga atbilstības rīka pielietojuma efektivitāte _Conocephalus dorsalis_ (Insecta: Orthoptera) automātiskai klātbūtnes noteikšanai" (ang. "The effectiveness of ARBIMON pattern matching tool for automatic detection of _Conocephalus dorsalis_ (Insecta: Orthoptera) presence").
 
 Tajā ir apkopoti autora bakalaura darba pētījuma dati un to apstrādes materiāli. Šeit ir pieejamas datu tabulas ar paraugu atbilstības rīka un audiovizuālajiem rezultātiem, kurās apkopota informācija par visu pārskatīto audioierakstu _Conocephalus dorsalis_ sugas klātbūtni. Repozitorijā ir iekļautas arī komandrindas ar datu sakārtošanu, statistiskajo analīzi un rezultātu vizualizāciju, tostarp audioierakstu attēlošanu spektrogrammu un oscilogrammu veidā. 
 
-_Repozitorijs satur trīs pamatdirektīvas:_
+**Repozitorijs satur trīs pamatdirektīvas:**
+
 [**Izejas dati**](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/tree/main/Izejas%20dati) - direktorija ietver pētījumam nepieciešamos failus. Pētījumā izmantotie primārie audio faili nav publiski pieejami, taču no tiem audiovizuāli iegūtie rezulāti ir apkopoti [tabulā](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/pm_results_online.xlsx). Savukārt paraugu atbilstības rīka dati ir lejupielādējami [šeit](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/pattern_matching_results_new2.zip). 
 Šī direktorija satur arī komandrindas, kas tika izmantotas, lai apvienotu audiovizuālos un paraugu atbilstības rīka rezultātus, tādējādi izveidojot kopsavilkuma [tabulu](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/visiDati_03032026.xlsx), kas tālāk kalpoja kā pamatdati datu apstrādes posmā. Papildus šajā sadaļā ir pieejama informācija par paraugierakstiem, pētījuma teritorijām un to koordinātēm.
 
