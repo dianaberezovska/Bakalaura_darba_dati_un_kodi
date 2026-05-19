@@ -7,7 +7,7 @@ Repozitorija ir veidota bakalaura darbam ar nosaukumu "ARBIMON parauga atbilstī
 
 Tajā ir apkopoti autora bakalaura darba pētījuma dati un to apstrādes materiāli. Šeit ir pieejamas datu tabulas ar paraugu atbilstības rīka un audiovizuālajiem rezultātiem, kurās apkopota informācija par visu pārskatīto audioierakstu _Conocephalus dorsalis_ sugas klātbūtni. Repozitorijā ir iekļautas arī komandrindas ar datu sakārtošanu, statistiskajo analīzi un rezultātu vizualizāciju, tostarp audioierakstu attēlošanu spektrogrammu un oscilogrammu veidā. 
 
-**Repozitorijs satur trīs pamatdirektīvas:**
+**Repozitorija satur trīs pamatdirektorijas:**
 
 [**Izejas dati**](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/tree/main/Izejas%20dati) - direktorija ietver pētījumam nepieciešamos failus. Pētījumā izmantotie primārie audio faili nav publiski pieejami, taču no tiem audiovizuāli iegūtie rezulāti ir apkopoti [tabulā](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/pm_results_online.xlsx). Savukārt paraugu atbilstības rīka dati ir lejupielādējami [šeit](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/pattern_matching_results_new2.zip). 
 Šī direktorija satur arī komandrindas, kas tika izmantotas, lai apvienotu audiovizuālos un paraugu atbilstības rīka rezultātus, tādējādi izveidojot kopsavilkuma [tabulu](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/blob/main/Izejas%20dati/visiDati_03032026.xlsx), kas tālāk kalpoja kā pamatdati datu apstrādes posmā. Papildus šajā sadaļā ir pieejama informācija par paraugierakstiem, pētījuma teritorijām un to koordinātēm.
