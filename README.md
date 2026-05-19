@@ -11,7 +11,7 @@ Tajā ir apkopoti autora bakalaura darba pētījuma dati un to apstrādes materi
 Šī direktorija ietver pētījumam nepieciešamos failus, kas ir sakārtoti atsevišķās apakšdirektorijās. Pētījumā izmantotie primārie audio faili nav publiski pieejami, taču no tiem audiovizuāli iegūtie dati ir apkopoti tabulā un pieejami [šeit](Izejas_dati/pm_results_online.xlsx). Savukārt paraugu atbilstības rīka dati ir lejupielādējami [šeit](Izejas_dati/pattern_matching_results_new2.zip). 
 Šī direktorija satur arī komandrindas, kas tika izmantotas, lai apvienotu audiovizuālos un paraugu atbilstības rīka rezultātus, tādējādi izveidojot kopsavilkuma tabulu [visiDati_03032026.xlsx](Izejas_dati/visiDati_03032026.xlsx), kas tālāk kalpoja kā pamatdati datu apstrādes posmā. Papildus šajā sadaļā ir pieejama informācija par paraugierakstiem, pētījuma vietām un pētīto teritoriju koordinātēm.
 
-### [Datu apstrāde](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/tree/main/Orthoptera%20stridul%C4%81cija)
+### [Datu apstrāde](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/tree/main/Datu%20apstr%C4%81de)
 
 
 ### [Orthoptera stridulācija](https://github.com/dianaberezovska/Bakalaura_darba_dati_un_kodi/tree/main/Orthoptera%20stridul%C4%81cija)
